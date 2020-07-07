@@ -51,14 +51,23 @@ vector<Statement> parse(vector<string>& program) {
 }
 
 struct Codegen {
+  string symbolname;
   ofstream ofs;
   int label = 0;
   Codegen(const string& outfile, vector<Statement>& statements) : ofs(outfile) {
+    int i;
+    for (i = outfile.size() - 1; i >= 0; i--)
+      if (outfile[i] == '/') {
+        i++;
+        break;
+      }
+    symbolname = outfile.substr(i, outfile.size() - i - 3);
+
     for (auto s : statements) {
       if (s.command == "push")
         load(s.arg1, s.arg2), push();
       else if (s.command == "pop")
-        pop();
+        pop(), store(s.arg1, s.arg2);
       else if (s.command == "add" or s.command == "sub" or s.command == "and" or
                s.command == "or")
         bin_op(s.command);
@@ -131,12 +140,58 @@ struct Codegen {
     label += 2;
   }
 
-  void load(string segment, string index) {
+  void addr(string segment, string index) {
+    if (segment == "temp") {
+      ofs << "@R5" << endl;
+      ofs << "D=A" << endl;
+    } else if (segment == "pointer") {
+      ofs << "@R3" << endl;
+      ofs << "D=A" << endl;
+    } else if (segment == "static") {
+      ofs << "@" << symbolname << index << endl;
+      ofs << "D=A" << endl;
+    } else {
+      if (segment == "local")
+        ofs << "@LCL" << endl;
+      else if (segment == "argument")
+        ofs << "@ARG" << endl;
+      else if (segment == "this")
+        ofs << "@THIS" << endl;
+      else if (segment == "that")
+        ofs << "@THAT" << endl;
+
+      ofs << "D=M" << endl;
+    }
     ofs << "@" << index << endl;
-    ofs << "D=A" << endl;
+    ofs << "A=D+A" << endl;
   }
 
-  void store(string segment, string index) {}
+  void load(string segment, string index) {
+    if (segment == "constant") {
+      ofs << "@" << index << endl;
+      ofs << "D=A" << endl;
+    } else {
+      addr(segment, index);
+      ofs << "D=M" << endl;
+    }
+  }
+
+  void store(string segment, string index) {
+    ofs << "@R13" << endl;
+    ofs << "M=D" << endl;
+
+    addr(segment, index);
+    ofs << "D=A" << endl;
+    ofs << "@R14" << endl;
+    ofs << "M=D" << endl;
+
+    ofs << "@R13" << endl;
+    ofs << "D=M" << endl;
+
+    ofs << "@R14" << endl;
+    ofs << "A=M" << endl;
+    ofs << "M=D" << endl;
+  }
 
   void push() {
     // store to stack
