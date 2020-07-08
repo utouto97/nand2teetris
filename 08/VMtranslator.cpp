@@ -1,3 +1,4 @@
+#include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <string>
@@ -53,8 +54,19 @@ vector<Statement> parse(vector<string>& program) {
 struct Codegen {
   string symbolname;
   ofstream ofs;
-  int label = 0;
+  int label = 0, ret_label = 0;
   Codegen(const string& outfile, vector<Statement>& statements) : ofs(outfile) {
+    // initialize
+    ofs << "@256" << endl;
+    ofs << "D=A" << endl;
+    ofs << "@SP" << endl;
+    ofs << "M=D" << endl;
+
+    // jump to entry point
+    call("Sys.init", "0");
+    //    ofs << "@fSys.init" << endl;
+    //    ofs << "0; JMP" << endl;
+
     int i;
     for (i = outfile.size() - 1; i >= 0; i--)
       if (outfile[i] == '/') {
@@ -245,7 +257,7 @@ struct Codegen {
 
   void call(string f, string n) {
     // push ret addr
-    ofs << "@r" << f << endl;
+    ofs << "@r" << ret_label << f << endl;
     ofs << "D=A" << endl;
     push();
 
@@ -261,15 +273,17 @@ struct Codegen {
 
     // reposition arg, lcl
     load("imm", "SP");
-    store("imm", "LCL");
     ofs << "@" << 5 + stoi(n) << endl;
-    ofs << "D=D-M" << endl;
+    ofs << "D=D-A" << endl;
     store("imm", "ARG");
+    load("imm", "SP");
+    store("imm", "LCL");
 
     // jump to f and label to return back
     ofs << "@f" << f << endl;
     ofs << "0; JMP" << endl;
-    ofs << "(r" << f << ")" << endl;
+    ofs << "(r" << ret_label << f << ")" << endl;
+    ret_label++;
   }
 
   void func(string f, string k) {
@@ -295,45 +309,69 @@ struct Codegen {
     load("imm", "LCL");
     store("imm", "R15");
 
+    // return addr
+    load("imm", "R15");
+    ofs << "@5" << endl;
+    ofs << "A=D-A" << endl;
+    ofs << "D=M" << endl;
+    ofs << "@R14" << endl;
+    ofs << "M=D" << endl;
+
     // set ret value
     pop();
-    store("argument", "0");
+    ofs << "@ARG" << endl;
+    ofs << "A=M" << endl;
+    ofs << "M=D" << endl;
 
     // restore sp, that, this, arg, lcl
     load("imm", "ARG");
     ofs << "D=D+1" << endl;
-    store("imm", "SP");
+    ofs << "@SP" << endl;
+    ofs << "M=D" << endl;
 
     load("imm", "R15");
     ofs << "A=D-1" << endl;
     ofs << "D=M" << endl;
-    store("imm", "THAT");
+    ofs << "@THAT" << endl;
+    ofs << "M=D" << endl;
 
     load("imm", "R15");
     ofs << "@2" << endl;
     ofs << "A=D-A" << endl;
     ofs << "D=M" << endl;
-    store("imm", "THIS");
+    ofs << "@THIS" << endl;
+    ofs << "M=D" << endl;
 
     load("imm", "R15");
     ofs << "@3" << endl;
     ofs << "A=D-A" << endl;
     ofs << "D=M" << endl;
-    store("imm", "ARG");
+    ofs << "@ARG" << endl;
+    ofs << "M=D" << endl;
 
     load("imm", "R15");
     ofs << "@4" << endl;
     ofs << "A=D-A" << endl;
     ofs << "D=M" << endl;
-    store("imm", "LCL");
+    ofs << "@LCL" << endl;
+    ofs << "M=D" << endl;
 
     // jump to return
-    load("imm", "R15");
-    ofs << "@5" << endl;
-    ofs << "A=D-A" << endl;
+    ofs << "@R14" << endl;
+    ofs << "A=M" << endl;
     ofs << "0; JMP" << endl;
   }
 };
+
+void formatFiles(string inputfile, vector<string>& program) {
+  ifstream ifs(inputfile);
+  string line;
+  while (getline(ifs, line)) {
+    line = formatLine(line);
+    if (line == "") continue;
+    program.emplace_back(line);
+  }
+}
 
 int main(int argc, char* argv[]) {
   if (argc != 2) {
@@ -342,23 +380,28 @@ int main(int argc, char* argv[]) {
   }
 
   string inputfile = argv[1];
-  ifstream ifs(inputfile);
-  vector<string> program;
-  string line;
-  while (getline(ifs, line)) {
-    line = formatLine(line);
-    if (line == "") continue;
-    program.emplace_back(line);
+  vector<string> programs;
+  string outfile;
+  if (inputfile.substr(inputfile.size() - 3, 3) == ".vm") {
+    outfile = inputfile.substr(0, inputfile.size() - 3) + ".asm";
+    formatFiles(inputfile, programs);
+  } else {
+    if (inputfile[inputfile.size() - 1] == '/')
+      inputfile = inputfile.substr(0, inputfile.size() - 1);
+
+    int i;
+    for (i = inputfile.size() - 1; i >= 0; i--)
+      if (inputfile[i] == '/') break;
+    outfile = inputfile + inputfile.substr(i, inputfile.size() - i) + ".asm";
+
+    for (const auto& entry : std::filesystem::directory_iterator(inputfile)) {
+      string p = entry.path();
+      if (p.substr(p.size() - 3, 3) == ".vm") formatFiles(p, programs);
+    }
   }
 
-  auto statements = parse(program);
-
-  string outfile = inputfile.substr(0, inputfile.size() - 3) + ".asm";
+  auto statements = parse(programs);
   Codegen codegen(outfile, statements);
-  /*
-  for (auto s : statements)
-    cout << s.command << ":" << s.arg1 << " " << s.arg2 << endl;
-  */
 
   return 0;
 }
