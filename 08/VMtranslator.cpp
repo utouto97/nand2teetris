@@ -67,16 +67,16 @@ struct Codegen {
     //    ofs << "@fSys.init" << endl;
     //    ofs << "0; JMP" << endl;
 
-    int i;
-    for (i = outfile.size() - 1; i >= 0; i--)
-      if (outfile[i] == '/') {
-        i++;
-        break;
-      }
-    symbolname = outfile.substr(i, outfile.size() - i - 3);
-
     for (auto s : statements) {
-      if (s.command == "label")
+      if (s.command == "symbolname") {
+        int i;
+        for (i = s.arg2.size() - 1; i >= 0; i--)
+          if (s.arg2[i] == '/') {
+            i++;
+            break;
+          }
+        symbolname = s.arg2.substr(i, s.arg2.size() - i) + ".";
+      } else if (s.command == "label")
         ofs << "(l" << s.arg2 << ")" << endl;
       else if (s.command == "push") {
         load(s.arg1, s.arg2);
@@ -171,16 +171,14 @@ struct Codegen {
     if (segment == "imm") {
       ofs << "@" << index << endl;
       return;
-    }
-
-    if (segment == "temp") {
+    } else if (segment == "static") {
+      ofs << "@" << symbolname << index << endl;
+      return;
+    } else if (segment == "temp") {
       ofs << "@R5" << endl;
       ofs << "D=A" << endl;
     } else if (segment == "pointer") {
       ofs << "@R3" << endl;
-      ofs << "D=A" << endl;
-    } else if (segment == "static") {
-      ofs << "@" << symbolname << index << endl;
       ofs << "D=A" << endl;
     } else {
       if (segment == "local")
@@ -396,6 +394,7 @@ int main(int argc, char* argv[]) {
 
     for (const auto& entry : std::filesystem::directory_iterator(inputfile)) {
       string p = entry.path();
+      programs.emplace_back("symbolname " + p.substr(0, p.size() - 3));
       if (p.substr(p.size() - 3, 3) == ".vm") formatFiles(p, programs);
     }
   }
