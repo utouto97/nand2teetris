@@ -84,6 +84,12 @@ struct Codegen {
         ofs << "0; JMP" << endl;
       } else if (s.command == "if-goto")
         if_goto(s.arg2);
+      else if (s.command == "call")
+        call(s.arg1, s.arg2);
+      else if (s.command == "function")
+        func(s.arg1, s.arg2);
+      else if (s.command == "return")
+        ret();
     }
   }
 
@@ -150,6 +156,11 @@ struct Codegen {
   }
 
   void addr(string segment, string index) {
+    if (segment == "imm") {
+      ofs << "@" << index << endl;
+      return;
+    }
+
     if (segment == "temp") {
       ofs << "@R5" << endl;
       ofs << "D=A" << endl;
@@ -230,6 +241,97 @@ struct Codegen {
 
     ofs << "@l" << label << endl;
     ofs << "D;  JNE" << endl;
+  }
+
+  void call(string f, string n) {
+    // push ret addr
+    ofs << "@r" << f << endl;
+    ofs << "D=A" << endl;
+    push();
+
+    // push LCL, ARG, THIS, THAT
+    load("imm", "LCL");
+    push();
+    load("imm", "ARG");
+    push();
+    load("imm", "THIS");
+    push();
+    load("imm", "THAT");
+    push();
+
+    // reposition arg, lcl
+    load("imm", "SP");
+    store("imm", "LCL");
+    ofs << "@" << 5 + stoi(n) << endl;
+    ofs << "D=D-M" << endl;
+    store("imm", "ARG");
+
+    // jump to f and label to return back
+    ofs << "@f" << f << endl;
+    ofs << "0; JMP" << endl;
+    ofs << "(r" << f << ")" << endl;
+  }
+
+  void func(string f, string k) {
+    ofs << "(f" << f << ")" << endl;
+
+    ofs << "@" << k << endl;
+    ofs << "D=A" << endl;
+    ofs << "(ils" << f << ")" << endl;  // for inner loop
+    ofs << "@ile" << f << endl;
+    ofs << "D; JEQ" << endl;
+    store("imm", "R15");
+    ofs << "D=0" << endl;
+    push();
+    load("imm", "R15");
+    ofs << "D=D-1" << endl;
+    ofs << "@ils" << f << endl;
+    ofs << "0; JMP" << endl;
+    ofs << "(ile" << f << ")" << endl;
+  }
+
+  void ret() {
+    // FRAME
+    load("imm", "LCL");
+    store("imm", "R15");
+
+    // set ret value
+    pop();
+    store("argument", "0");
+
+    // restore sp, that, this, arg, lcl
+    load("imm", "ARG");
+    ofs << "D=D+1" << endl;
+    store("imm", "SP");
+
+    load("imm", "R15");
+    ofs << "A=D-1" << endl;
+    ofs << "D=M" << endl;
+    store("imm", "THAT");
+
+    load("imm", "R15");
+    ofs << "@2" << endl;
+    ofs << "A=D-A" << endl;
+    ofs << "D=M" << endl;
+    store("imm", "THIS");
+
+    load("imm", "R15");
+    ofs << "@3" << endl;
+    ofs << "A=D-A" << endl;
+    ofs << "D=M" << endl;
+    store("imm", "ARG");
+
+    load("imm", "R15");
+    ofs << "@4" << endl;
+    ofs << "A=D-A" << endl;
+    ofs << "D=M" << endl;
+    store("imm", "LCL");
+
+    // jump to return
+    load("imm", "R15");
+    ofs << "@5" << endl;
+    ofs << "A=D-A" << endl;
+    ofs << "0; JMP" << endl;
   }
 };
 
