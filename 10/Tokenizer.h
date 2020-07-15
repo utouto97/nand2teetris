@@ -1,3 +1,5 @@
+#pragma once
+
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -18,15 +20,15 @@ struct Tokenizer {
   Tokenizer(string inputfile) {
     ifstream ifs(inputfile);
     string t;
+    bool comment = false;
     while (getline(ifs, t)) {
-      s += erase_comment(t);
+      s += erase_comment(t, comment);
     }
   }
 
-  string erase_comment(string s) {
+  string erase_comment(string s, bool& comment) {
     int n = s.size();
     string ret = "";
-    bool comment = false;
     for (int i = 0; i < n; i++) {
       if (comment) {
         if (i + 1 < n and s.substr(i, 2) == "*/") i++, comment = false;
@@ -44,7 +46,7 @@ struct Tokenizer {
 
   vector<Token> analyze() {
     string word = "", type = "None";
-    const string symbols = "{}()[].,;+-*/&|<>=_";
+    const string symbols = "{}()[].,;+-*/&|<>=_~";
     const string keywords[] = {
         "class", "constructor", "function", "method",  "field", "static",
         "var",   "int",         "char",     "boolean", "void",  "true",
